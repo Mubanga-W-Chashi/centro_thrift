@@ -1,0 +1,287 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  SALES_ASSISTANT
+}
+
+enum ProductStatus {
+  AVAILABLE
+  RESERVED
+  SOLD
+  HIDDEN
+}
+
+enum Gender {
+  WOMENS
+  MENS
+  UNISEX
+}
+
+enum ProductSize {
+  XS
+  S
+  M
+  L
+  XL
+  XXL
+}
+
+enum ProductCondition {
+  EXCELLENT
+  VERY_GOOD
+  GOOD
+}
+
+enum ReservationStatus {
+  ACTIVE
+  EXPIRED
+  PAID
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  REFUNDED
+}
+
+enum DeliveryStatus {
+  PENDING
+  SCHEDULED
+  OUT_FOR_DELIVERY
+  DELIVERED
+}
+
+enum DeliveryDay {
+  MONDAY
+  WEDNESDAY
+  SATURDAY
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  passwordHash  String?   @map("password_hash")
+  role          UserRole  @default(SALES_ASSISTANT)
+  accounts      Account[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Product {
+  id          String           @id @default(cuid())
+  sku         String           @unique
+  slug        String           @unique
+  title       String
+  description String?
+  category    String
+  color       String
+  gender      Gender
+  size        ProductSize
+  condition   ProductCondition
+  price       Int
+  stock       Int              @default(1)
+  status      ProductStatus    @default(AVAILABLE)
+  soldAt      DateTime?        @map("sold_at")
+
+  images           ProductImage[]
+  collections      ProductCollection[]
+  reservationItems ReservationItem[]
+  orderItems       OrderItem[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([category])
+  @@index([gender])
+  @@map("products")
+}
+
+model ProductImage {
+  id        String  @id @default(cuid())
+  productId String  @map("product_id")
+  url       String
+  altText   String? @map("alt_text")
+  sortOrder Int     @default(0) @map("sort_order")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+model Collection {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String?
+  isActive    Boolean @default(true) @map("is_active")
+
+  products ProductCollection[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("collections")
+}
+
+model ProductCollection {
+  productId    String @map("product_id")
+  collectionId String @map("collection_id")
+
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@id([productId, collectionId])
+  @@map("product_collections")
+}
+
+model Reservation {
+  id                String            @id @default(cuid())
+  reservationNumber String            @unique @map("reservation_number")
+  customerName      String            @map("customer_name")
+  customerPhone     String            @map("customer_phone")
+  status            ReservationStatus @default(ACTIVE)
+  expiresAt         DateTime          @map("expires_at")
+  deliveryDay       DeliveryDay       @map("delivery_day")
+
+  items ReservationItem[]
+  order Order?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([customerPhone, status])
+  @@map("reservations")
+}
+
+model ReservationItem {
+  id            String @id @default(cuid())
+  reservationId String @map("reservation_id")
+  productId     String @map("product_id")
+  price         Int
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  product     Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([reservationId, productId])
+  @@map("reservation_items")
+}
+
+model Order {
+  id            String         @id @default(cuid())
+  orderNumber   String         @unique @map("order_number")
+  reservationId String?        @unique @map("reservation_id")
+  customerName  String         @map("customer_name")
+  customerPhone String         @map("customer_phone")
+  total         Int
+  paymentStatus PaymentStatus  @default(PENDING) @map("payment_status")
+  deliveryDay   DeliveryDay    @map("delivery_day")
+  deliveryStatus DeliveryStatus @default(PENDING) @map("delivery_status")
+
+  reservation Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  items       OrderItem[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  orderId   String @map("order_id")
+  productId String @map("product_id")
+  price     Int
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, productId])
+  @@map("order_items")
+}
+
+model AuditLog {
+  id        String  @id @default(cuid())
+  userId    String? @map("user_id")
+  action    String
+  entity    String
+  entityId  String? @map("entity_id")
+  metadata  Json?
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  channel   String
+  recipient String
+  subject   String?
+  body      String
+  sentAt    DateTime? @map("sent_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("notifications")
+}
